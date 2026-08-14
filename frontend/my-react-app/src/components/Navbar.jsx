@@ -1,9 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import useAuthUser from "../hooks/useAuthUser";
 
-// This decides the styling for one navigation link.
-// react-router passes in "isActive", which is true for the page
-// you are currently on, so we can highlight it.
 function linkClass({ isActive }) {
   if (isActive) {
     return "px-3 py-2 rounded-lg bg-amber-800 text-amber-50";
@@ -15,7 +12,6 @@ function Navbar() {
   const navigate = useNavigate();
   const user = useAuthUser();
 
-  // This function logs the user out.
   const handleLogout = () => {
     localStorage.removeItem("token");
     navigate("/");

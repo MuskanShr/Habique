@@ -7,10 +7,17 @@ import {
   useUndoCheckIn,
 } from "./hooks/useHabits";
 import { getTodayKey, getTodayLabel } from "./lib/date";
+import {
+  getWeeklyProgress,
+  getBestCurrentStreak,
+  getBestOverallStreak,
+} from "./lib/streaks";
 import StatCard from "./components/StatCard";
 import HabitCard from "./components/HabitCard";
 import EmptyState from "./components/EmptyState";
 import Spinner from "./components/Spinner";
+import ProgressBar from "./components/ProgressBar";
+import WeeklyProgress from "./components/WeeklyProgress";
 
 function Dashboard() {
   const user = useAuthUser();
@@ -64,6 +71,13 @@ function Dashboard() {
     completionPercent = Math.round((completedToday / totalHabits) * 100);
   }
 
+  // Streak numbers, calculated from the completions arrays.
+  const currentStreak = getBestCurrentStreak(habits);
+  const bestStreak = getBestOverallStreak(habits);
+
+  // The last 7 days of progress.
+  const week = getWeeklyProgress(habits);
+
   return (
     <div>
       <h1 className="text-3xl font-bold text-red-900">
@@ -75,8 +89,8 @@ function Dashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard label="Total Habits" value={totalHabits} />
         <StatCard label="Completed Today" value={completedToday} />
-        <StatCard label="Current Streak" value="—" />
-        <StatCard label="Best Streak" value="—" />
+        <StatCard label="Current Streak" value={currentStreak} />
+        <StatCard label="Best Streak" value={bestStreak} />
       </div>
 
       {/* Today's progress */}
@@ -86,13 +100,11 @@ function Dashboard() {
           <span className="text-red-900">{completionPercent}%</span>
         </div>
 
-        <div className="w-full h-3 bg-amber-100 rounded-full">
-          <div
-            className="h-3 bg-amber-800 rounded-full"
-            style={{ width: `${completionPercent}%` }}
-          ></div>
-        </div>
+        <ProgressBar percent={completionPercent} />
       </div>
+
+      {/* Weekly progress */}
+      <WeeklyProgress week={week} />
 
       {/* Quick add */}
       <form onSubmit={handleQuickAdd} className="flex gap-2 mb-6">

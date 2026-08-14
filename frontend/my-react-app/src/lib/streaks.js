@@ -1,310 +1,154 @@
-import {
-  addDays,
-  compareDateKeys,
-  dayOfWeek,
-  diffInDays,
-  eachDayOfWeek,
-  lastNDays,
-  startOfWeekKey,
-  todayKey,
-  weekKeyOf,
-} from "./date.js";
+import { getTodayKey, shiftDayKey } from "./date";
 
-export const DEFAULT_WEEK_STARTS_ON = 1; // Monday
+// All of these work on a habit's completions array,
+// which is just a list of day keys: ["2026-08-13", "2026-08-12", ...]
 
-/* ------------------------------------------------------------- primitives */
+// This function calculates the current streak.
+export function calculateCurrentStreak(completions) {
+  if (completions.length === 0) {
+    return 0;
+  }
 
-function completionSet(habit) {
-  return new Set(habit?.completions ?? []);
-}
+  const today = getTodayKey();
 
-function sortedCompletions(habit) {
-  return [...(habit?.completions ?? [])].sort(compareDateKeys);
-}
+  // Where we start counting backwards from.
+  let dayToCheck = today;
 
-/** Is this habit scheduled on this day? Weekly habits accept any day. */
-export function isDueOn(habit, key) {
-  const frequency = habit?.frequency ?? { kind: "daily" };
-  if (frequency.kind === "weekly") return true;
-  const days = frequency.daysOfWeek;
-  if (!Array.isArray(days) || days.length === 0 || days.length >= 7)
-    return true;
-  return days.includes(dayOfWeek(key));
-}
-
-/** Was this habit checked in on this day? */
-export function isCompletedOn(habit, key) {
-  return completionSet(habit).has(key);
-}
-
-export function isCompletedToday(habit, today = todayKey()) {
-  return isCompletedOn(habit, today);
-}
-
-export function streakUnit(habit) {
-  return habit?.frequency?.kind === "weekly" ? "week" : "day";
-}
-
-function weeklyTarget(habit) {
-  const target = Number(habit?.frequency?.timesPerWeek);
-  return Number.isFinite(target) && target > 0 ? Math.floor(target) : 1;
-}
-
-/* ------------------------------------------------------------ daily logic */
-
-function dailyCurrentStreak(habit, today) {
-  const done = completionSet(habit);
-  if (done.size === 0) return 0;
-
-  const earliest = sortedCompletions(habit)[0];
-  let cursor = today;
-
-  // Decision B: today is still in progress, so an unchecked today is not a miss.
-  if (isDueOn(habit, cursor) && !done.has(cursor)) {
-    cursor = addDays(cursor, -1);
+  // If today is not checked in yet, we do NOT break the streak,
+  // because the day is not over. So we start from yesterday instead.
+  if (!completions.includes(today)) {
+    dayToCheck = shiftDayKey(today, -1);
   }
 
   let streak = 0;
-  while (diffInDays(cursor, earliest) >= 0) {
-    if (!isDueOn(habit, cursor)) {
-      cursor = addDays(cursor, -1); // not scheduled — step over it
-      continue;
-    }
-    if (!done.has(cursor)) break; // a scheduled day was missed
-    streak += 1;
-    cursor = addDays(cursor, -1);
+
+  // Keep stepping back one day at a time while that day is completed.
+  // The moment we hit a missing day, the loop stops.
+  while (completions.includes(dayToCheck)) {
+    streak = streak + 1;
+    dayToCheck = shiftDayKey(dayToCheck, -1);
   }
+
   return streak;
 }
 
-function dailyBestStreak(habit, today) {
-  const done = completionSet(habit);
-  if (done.size === 0) return 0;
+// This function calculates the best streak.
+export function calculateBestStreak(completions) {
+  if (completions.length === 0) {
+    return 0;
+  }
 
-  let cursor = sortedCompletions(habit)[0];
-  let best = 0;
-  let run = 0;
+  // Sort the days oldest first.
+  // Sorting as TEXT works here because every key is "YYYY-MM-DD",
+  // so alphabetical order is also date order.
+  // [...completions] makes a copy so we do not change the original.
+  const days = [...completions].sort();
 
-  while (diffInDays(today, cursor) >= 0) {
-    if (isDueOn(habit, cursor)) {
-      if (done.has(cursor)) {
-        run += 1;
-        if (run > best) best = run;
-      } else if (cursor !== today) {
-        run = 0; // today is still open, so it can't end a run yet
+  let best = 1;
+  let running = 1;
+
+  for (let i = 1; i < days.length; i++) {
+    // What the day before this one would be.
+    const dayBefore = shiftDayKey(days[i], -1);
+
+    if (days[i - 1] === dayBefore) {
+      // The previous day in the list is exactly one day earlier,
+      // so the run continues.
+      running = running + 1;
+    } else {
+      // There is a gap, so start a new run.
+      running = 1;
+    }
+
+    if (running > best) {
+      best = running;
+    }
+  }
+
+  return best;
+}
+
+// This function calculates the completion rate over the last N days,
+// as a percentage.
+export function calculateCompletionRate(completions, numberOfDays) {
+  const today = getTodayKey();
+
+  let doneCount = 0;
+
+  for (let i = 0; i < numberOfDays; i++) {
+    const day = shiftDayKey(today, -i);
+
+    if (completions.includes(day)) {
+      doneCount = doneCount + 1;
+    }
+  }
+
+  return Math.round((doneCount / numberOfDays) * 100);
+}
+
+// This function builds the last 7 days of progress across ALL habits.
+// It returns a list like:
+// [{ dayKey, label, completedCount, totalCount, percent }, ...]
+export function getWeeklyProgress(habits) {
+  const today = getTodayKey();
+  const week = [];
+
+  // i counts down from 6 to 0 so the oldest day comes first
+  // and today ends up last.
+  for (let i = 6; i >= 0; i--) {
+    const dayKey = shiftDayKey(today, -i);
+
+    // Count how many habits were completed on this day.
+    let completedCount = 0;
+
+    habits.forEach((habit) => {
+      if (habit.completions.includes(dayKey)) {
+        completedCount = completedCount + 1;
       }
+    });
+
+    // Work out the percentage, avoiding division by zero.
+    let percent = 0;
+    if (habits.length > 0) {
+      percent = Math.round((completedCount / habits.length) * 100);
     }
-    cursor = addDays(cursor, 1);
+
+    week.push({
+      dayKey: dayKey,
+      completedCount: completedCount,
+      totalCount: habits.length,
+      percent: percent,
+    });
   }
-  return best;
+
+  return week;
 }
 
-/* ----------------------------------------------------------- weekly logic */
+// This function finds the highest current streak across all habits.
+// This is the "Current Streak" number on the dashboard.
+export function getBestCurrentStreak(habits) {
+  let highest = 0;
 
-function weeklyCounts(habit, weekStartsOn) {
-  const counts = new Map();
-  for (const key of habit?.completions ?? []) {
-    const week = weekKeyOf(key, weekStartsOn);
-    counts.set(week, (counts.get(week) ?? 0) + 1);
-  }
-  return counts;
-}
-
-function weeklyCurrentStreak(habit, today, weekStartsOn) {
-  const target = weeklyTarget(habit);
-  const counts = weeklyCounts(habit, weekStartsOn);
-  if (counts.size === 0) return 0;
-
-  const earliestWeek = [...counts.keys()].sort(compareDateKeys)[0];
-  let cursor = startOfWeekKey(today, weekStartsOn);
-
-  // Decision B, weekly form: the current week is still in progress.
-  if ((counts.get(cursor) ?? 0) < target) {
-    cursor = addDays(cursor, -7);
-  }
-
-  let streak = 0;
-  while (diffInDays(cursor, earliestWeek) >= 0) {
-    if ((counts.get(cursor) ?? 0) < target) break;
-    streak += 1;
-    cursor = addDays(cursor, -7);
-  }
-  return streak;
-}
-
-function weeklyBestStreak(habit, today, weekStartsOn) {
-  const target = weeklyTarget(habit);
-  const counts = weeklyCounts(habit, weekStartsOn);
-  if (counts.size === 0) return 0;
-
-  const currentWeek = startOfWeekKey(today, weekStartsOn);
-  let cursor = [...counts.keys()].sort(compareDateKeys)[0];
-  let best = 0;
-  let run = 0;
-
-  while (diffInDays(currentWeek, cursor) >= 0) {
-    if ((counts.get(cursor) ?? 0) >= target) {
-      run += 1;
-      if (run > best) best = run;
-    } else if (cursor !== currentWeek) {
-      run = 0; // the in-progress week can't end a run yet
+  habits.forEach((habit) => {
+    const streak = calculateCurrentStreak(habit.completions);
+    if (streak > highest) {
+      highest = streak;
     }
-    cursor = addDays(cursor, 7);
-  }
-  return best;
-}
-
-/* ---------------------------------------------------------------- public */
-
-/** { currentStreak, bestStreak, unit } for one habit. */
-export function computeStreaks(habit, options = {}) {
-  const today = options.today ?? todayKey();
-  const weekStartsOn = options.weekStartsOn ?? DEFAULT_WEEK_STARTS_ON;
-  const weekly = habit?.frequency?.kind === "weekly";
-
-  return {
-    currentStreak: weekly
-      ? weeklyCurrentStreak(habit, today, weekStartsOn)
-      : dailyCurrentStreak(habit, today),
-    bestStreak: weekly
-      ? weeklyBestStreak(habit, today, weekStartsOn)
-      : dailyBestStreak(habit, today),
-    unit: weekly ? "week" : "day",
-  };
-}
-
-/** Current-week breakdown for the 7-day strip on a habit card. */
-export function getWeekProgress(habit, options = {}) {
-  const today = options.today ?? todayKey();
-  const weekStartsOn = options.weekStartsOn ?? DEFAULT_WEEK_STARTS_ON;
-  const done = completionSet(habit);
-
-  const days = eachDayOfWeek(today, weekStartsOn).map((key) => ({
-    key,
-    due: isDueOn(habit, key),
-    completed: done.has(key),
-    isToday: key === today,
-    isFuture: diffInDays(key, today) > 0,
-  }));
-
-  const completed = days.filter((day) => day.completed).length;
-  const target =
-    habit?.frequency?.kind === "weekly"
-      ? weeklyTarget(habit)
-      : days.filter((day) => day.due).length;
-
-  return {
-    days,
-    completed,
-    target,
-    percent:
-      target === 0 ? 0 : Math.min(100, Math.round((completed / target) * 100)),
-  };
-}
-
-/** Share of scheduled days actually completed over the trailing window. */
-export function getCompletionRate(habit, options = {}) {
-  const today = options.today ?? todayKey();
-  const windowDays = options.days ?? 30;
-  const done = completionSet(habit);
-
-  let due = 0;
-  let completed = 0;
-  for (const key of lastNDays(windowDays, today)) {
-    if (habit?.frequency?.kind === "weekly") {
-      due += 1;
-      if (done.has(key)) completed += 1;
-      continue;
-    }
-    if (!isDueOn(habit, key)) continue;
-    due += 1;
-    if (done.has(key)) completed += 1;
-  }
-
-  return {
-    due,
-    completed,
-    percent: due === 0 ? 0 : Math.round((completed / due) * 100),
-  };
-}
-
-/** Everything one habit card or detail page needs, in one call. */
-export function getHabitStats(habit, options = {}) {
-  const today = options.today ?? todayKey();
-  return {
-    ...computeStreaks(habit, options),
-    dueToday: isDueOn(habit, today),
-    completedToday: isCompletedOn(habit, today),
-    week: getWeekProgress(habit, options),
-    rate: getCompletionRate(habit, options),
-    totalCompletions: habit?.completions?.length ?? 0,
-  };
-}
-
-/** Dashboard aggregate across every active habit (decision D). */
-export function summarizeHabits(habits = [], options = {}) {
-  const today = options.today ?? todayKey();
-  const active = habits.filter((habit) => !habit.archived);
-
-  const dueToday = active.filter((habit) => isDueOn(habit, today));
-  const completedToday = dueToday.filter((habit) =>
-    isCompletedOn(habit, today),
-  );
-
-  let currentStreak = 0;
-  let bestStreak = 0;
-  for (const habit of active) {
-    const streaks = computeStreaks(habit, options);
-    if (streaks.currentStreak > currentStreak)
-      currentStreak = streaks.currentStreak;
-    if (streaks.bestStreak > bestStreak) bestStreak = streaks.bestStreak;
-  }
-
-  return {
-    totalHabits: active.length,
-    dueTodayCount: dueToday.length,
-    completedTodayCount: completedToday.length,
-    todayPercent:
-      dueToday.length === 0
-        ? 0
-        : Math.round((completedToday.length / dueToday.length) * 100),
-    currentStreak,
-    bestStreak,
-  };
-}
-
-/** Per-day totals for the dashboard's weekly progress chart. */
-export function getWeeklyOverview(habits = [], options = {}) {
-  const today = options.today ?? todayKey();
-  const weekStartsOn = options.weekStartsOn ?? DEFAULT_WEEK_STARTS_ON;
-  const active = habits.filter((habit) => !habit.archived);
-
-  const days = eachDayOfWeek(today, weekStartsOn).map((key) => {
-    const due = active.filter((habit) => isDueOn(habit, key));
-    const completed = due.filter((habit) => isCompletedOn(habit, key));
-    return {
-      key,
-      due: due.length,
-      completed: completed.length,
-      isToday: key === today,
-      isFuture: diffInDays(key, today) > 0,
-      percent:
-        due.length === 0
-          ? 0
-          : Math.round((completed.length / due.length) * 100),
-    };
   });
 
-  const totalDue = days.reduce(
-    (sum, day) => (day.isFuture ? sum : sum + day.due),
-    0,
-  );
-  const totalCompleted = days.reduce((sum, day) => sum + day.completed, 0);
+  return highest;
+}
 
-  return {
-    days,
-    totalDue,
-    totalCompleted,
-    percent: totalDue === 0 ? 0 : Math.round((totalCompleted / totalDue) * 100),
-  };
+// This function finds the highest best streak across all habits.
+export function getBestOverallStreak(habits) {
+  let highest = 0;
+
+  habits.forEach((habit) => {
+    const streak = calculateBestStreak(habit.completions);
+    if (streak > highest) {
+      highest = streak;
+    }
+  });
+
+  return highest;
 }
