@@ -4,6 +4,7 @@ import cors from "cors";
 
 import { dbConnect } from "./config/db.js";
 import authRoute from "./routes/auth.route.js";
+import habitRoute from "./routes/habit.route.js"; // ADDED
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ app.use(
 dbConnect();
 
 app.use("/api/v1/auth", authRoute);
+app.use("/api/v1/habits", habitRoute); // ADDED
 
 app.listen(process.env.PORT, () => {
   console.log(`Server running on port ${process.env.PORT}`);
