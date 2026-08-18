@@ -7,83 +7,79 @@ export function useHabits() {
 
   return useQuery({
     queryKey: ["habits", user?.id],
-    queryFn: () => habitsService.getHabits(user.id),
+    queryFn: () => habitsService.getHabits(),
     enabled: !!user,
   });
 }
 
+// This hook gets ONE habit by its id.
 export function useHabit(habitId) {
   const user = useAuthUser();
 
   return useQuery({
     queryKey: ["habits", user?.id, habitId],
-    queryFn: () => habitsService.getHabitById(user.id, habitId),
+    queryFn: () => habitsService.getHabitById(habitId),
     enabled: !!user,
   });
 }
 
-// adds a habit.
+// This hook adds a habit.
 export function useCreateHabit() {
-  const user = useAuthUser();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (newHabit) => habitsService.createHabit(user.id, newHabit),
+    mutationFn: (newHabit) => habitsService.createHabit(newHabit),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["habits"] });
     },
   });
 }
 
-// updates a habit.
+// This hook updates a habit.
 export function useUpdateHabit() {
-  const user = useAuthUser();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ habitId, changes }) =>
-      habitsService.updateHabit(user.id, habitId, changes),
+      habitsService.updateHabit(habitId, changes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["habits"] });
     },
   });
 }
 
-// deletes a habit.
+// This hook deletes a habit.
 export function useDeleteHabit() {
-  const user = useAuthUser();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (habitId) => habitsService.deleteHabit(user.id, habitId),
+    mutationFn: (habitId) => habitsService.deleteHabit(habitId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["habits"] });
     },
   });
 }
 
-// checks in a habit for one day.
+// This hook checks in a habit for one day.
 export function useCheckIn() {
-  const user = useAuthUser();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ habitId, dayKey }) =>
-      habitsService.checkInHabit(user.id, habitId, dayKey),
+      habitsService.checkInHabit(habitId, dayKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["habits"] });
     },
   });
 }
 
-// undoes a check-in for one day.
+// This hook undoes a check-in for one day.
 export function useUndoCheckIn() {
-  const user = useAuthUser();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ habitId, dayKey }) =>
-      habitsService.undoCheckInHabit(user.id, habitId, dayKey),
+      habitsService.undoCheckInHabit(habitId, dayKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["habits"] });
     },
